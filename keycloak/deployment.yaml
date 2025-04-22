@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:21.1
+        args: 
+        - start-dev
+        - --import-realm
+        env:
+        - name: KEYCLOAK_ADMIN
+          value: "admin"
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          value: "admin"
+        - name: KC_HOSTNAME_STRICT
+          value: "false"
+        - name: KC_HOSTNAME_STRICT_HTTPS
+          value: "false"
+        - name: KC_PROXY
+          value: "edge"
+        - name: KC_HTTP_RELATIVE_PATH
+          value: "/"
+        - name: KC_HOSTNAME_URL
+          value: "http://auth-keycloak.test"
+        - name: KC_HOSTNAME_ADMIN_URL
+          value: "http://auth-keycloak.test"
+        - name: KC_LOG_LEVEL
+          value: "INFO,org.keycloak:DEBUG,org.keycloak.exportimport:DEBUG"
+        ports:
+        - name: http
+          containerPort: 8080
+        volumeMounts:
+        - name: keycloak-realm
+          mountPath: /opt/keycloak/data/import/realm.json
+          subPath: realm.json
+        readinessProbe:
+          httpGet:
+            path: /realms/master
+            port: 8080
+          initialDelaySeconds: 30
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+      volumes:
+      - name: keycloak-realm
+        configMap:
+          name: keycloak-realm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-service
+spec:
+  selector:
+    app: keycloak
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP 

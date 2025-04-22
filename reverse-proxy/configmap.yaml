@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apache-oidc-config
+data:
+  proxy.conf: |
+    LoadModule mpm_event_module modules/mod_mpm_event.so
+    LoadModule rewrite_module modules/mod_rewrite.so
+    LoadModule authn_file_module modules/mod_authn_file.so
+    LoadModule authn_core_module modules/mod_authn_core.so
+    LoadModule authz_host_module modules/mod_authz_host.so
+    LoadModule authz_groupfile_module modules/mod_authz_groupfile.so
+    LoadModule authz_user_module modules/mod_authz_user.so
+    LoadModule authz_core_module modules/mod_authz_core.so
+    LoadModule access_compat_module modules/mod_access_compat.so
+    LoadModule auth_basic_module modules/mod_auth_basic.so
+    LoadModule reqtimeout_module modules/mod_reqtimeout.so
+    LoadModule filter_module modules/mod_filter.so
+    LoadModule mime_module modules/mod_mime.so
+    LoadModule log_config_module modules/mod_log_config.so
+    LoadModule env_module modules/mod_env.so
+    LoadModule headers_module modules/mod_headers.so
+    LoadModule setenvif_module modules/mod_setenvif.so
+    LoadModule proxy_module modules/mod_proxy.so
+    LoadModule proxy_http_module modules/mod_proxy_http.so
+    LoadModule unixd_module modules/mod_unixd.so
+    LoadModule dir_module modules/mod_dir.so
+    LoadModule alias_module modules/mod_alias.so
+    LoadModule auth_openidc_module modules/mod_auth_openidc.so
+
+    ServerRoot "/usr/local/apache2"
+    ServerName auth-oidc.test
+    Listen 80
+
+    TraceEnable off
+    ServerTokens Prod
+    ServerSignature Off
+
+    Include conf/extra/oidc.conf 
+
+  oidc.conf: |
+    OIDCClientID reverse-proxy-client
+    OIDCProviderMetadataURL http://keycloak-service:8080/realms/myrealm/.well-known/openid-configuration
+    OIDCRedirectURI http://auth-oidc.test/oauth2callback
+
+    OIDCScope "openid profile roles"
+    OIDCRemoteUserClaim sub
+    OIDCPassClaimsAs environment
+    OIDCCryptoPassphrase abc
+    OIDCClientSecret reverse-proxy-secret
+    OIDCStateMaxNumberOfCookies 20 
+
+    <Location />
+        AuthType openid-connect
+        Require valid-user
+
+        RequestHeader set X-User-Name %{OIDC_CLAIM_name}e
+        RequestHeader set X-User-Roles %{OIDC_CLAIM_realm_access}e
+
+        ProxyPass http://127.0.0.1:5000/
+        ProxyPassReverse http://127.0.0.1:5000/
+    </Location> 

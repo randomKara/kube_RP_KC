@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - application/deployment.yaml
+  - reverse-proxy/configmap.yaml
+  - reverse-proxy/deployment.yaml
+  - keycloak/configmap.yaml
+  - keycloak/deployment.yaml
+
+images:
+  - name: flask-app
+    newName: flask-app
+    newTag: latest
+  - name: apache-proxy
+    newName: apache-proxy
+    newTag: latest 
