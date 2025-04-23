@@ -10,6 +10,22 @@ Ce projet déploie un cluster Kubernetes avec trois composants principaux :
 
 Dans cette architecture, le reverse proxy Apache est déployé en tant que sidecar dans le même pod que l'application Flask. Cela permet une communication directe et sécurisée entre le proxy et l'application.
 
+### Diagramme d'architecture
+
+Le diagramme ci-dessous illustre en détail l'architecture du système et le flux d'authentification OpenID Connect :
+
+![Diagramme d'architecture](UML.png)
+
+#### Explications du diagramme :
+
+- **Flux d'authentification :** Le diagramme montre le parcours complet d'une requête utilisateur, depuis le navigateur jusqu'à l'application Flask, en passant par l'authentification Keycloak.
+- **Pattern Sidecar :** L'application Flask et le reverse proxy Apache sont dans le même pod, communiquant via localhost (127.0.0.1).
+- **Composants principaux :**
+  - Conteneur Flask (bleu) : Application backend
+  - Conteneur Apache (rouge) : Gère l'authentification OIDC
+  - Conteneur Keycloak (violet) : Serveur d'identité avec utilisateurs et clients
+- **Flux de données :** Les flèches numérotées indiquent l'ordre précis des opérations lors de l'authentification d'un utilisateur.
+
 ## Prérequis
 
 - Docker installé
@@ -160,4 +176,4 @@ minikube image load apache-proxy:latest
 Ensuite, supprimez et laissez Kubernetes recréer le pod:
 ```bash
 kubectl delete pod $(kubectl get pods -l app=flask-app -o name | cut -d/ -f2)
-``` 
+```
