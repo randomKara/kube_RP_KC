@@ -44,11 +44,11 @@ Le diagramme ci-dessous illustre en détail l'architecture du système et le flu
 ### 1. Démarrer Minikube
 
 ```bash
-# Démarrer minikube
-minikube start
+# Démarrer minikube avec suffisamment de ressources
+minikube start --cpus=4 --memory=8192
 
-# Activer le module ingress pour l'accès externe
-minikube addons enable ingress
+# Désactiver l'addon ingress Nginx s'il est activé
+minikube addons disable ingress
 
 # Démarrer le tunnel minikube (à garder ouvert dans un terminal séparé)
 minikube tunnel
@@ -72,6 +72,12 @@ minikube image load apache-proxy:latest
 ### 4. Déployer les services sur Kubernetes
 
 ```bash
+# Déployer HAProxy Ingress Controller
+kubectl apply -f haproxy-ingress/haproxy-ingress.yaml
+
+# Vérifier que le contrôleur HAProxy est prêt
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=haproxy-ingress -n ingress-haproxy --timeout=180s
+
 # Déployer Keycloak
 kubectl apply -f keycloak/configmap.yaml
 kubectl apply -f keycloak/deployment.yaml
@@ -89,35 +95,45 @@ kubectl apply -f ingress.yaml
 
 ### 5. Configurer les entrées DNS
 
-Obtenir l'adresse IP de l'ingress:
+Obtenir l'adresse IP de Minikube:
 ```bash
-INGRESS_IP=$(kubectl get ingress -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
-echo $INGRESS_IP
+MINIKUBE_IP=$(minikube ip)
+echo "Adresse IP de Minikube: $MINIKUBE_IP"
 ```
 
 Ajouter les entrées au fichier /etc/hosts:
 ```bash
-sudo sh -c "echo \"$INGRESS_IP auth-oidc.test\" >> /etc/hosts"
-sudo sh -c "echo \"$INGRESS_IP auth-keycloak.test\" >> /etc/hosts"
+# Supprimer les entrées existantes si nécessaire
+sudo sed -i '/auth-oidc.test/d' /etc/hosts
+sudo sed -i '/auth-keycloak.test/d' /etc/hosts
+
+# Ajouter les nouvelles entrées
+sudo sh -c "echo \"$MINIKUBE_IP auth-oidc.test auth-keycloak.test\" >> /etc/hosts"
 ```
 
 ### 6. Vérification du déploiement
 
+Vérifier que HAProxy Ingress fonctionne:
+```bash
+kubectl get svc -n ingress-haproxy
+kubectl get pods -n ingress-haproxy
+```
+
 Vérifier que Keycloak fonctionne correctement:
 ```bash
-curl -s http://auth-keycloak.test/realms/myrealm/.well-known/openid-configuration | head -5
+curl -s http://auth-keycloak.test:30080/realms/myrealm/.well-known/openid-configuration | head -5
 ```
 
 Vérifier que l'application redirige vers Keycloak pour l'authentification:
 ```bash
-curl -s http://auth-oidc.test -I
+curl -s http://auth-oidc.test:30080 -I
 ```
 
 ## Accès à l'application
 
 Accédez à l'application via votre navigateur:
 ```
-http://auth-oidc.test
+http://auth-oidc.test:30080
 ```
 
 Vous serez redirigé vers la page de connexion de Keycloak. Après vous être authentifié, vous serez redirigé vers l'application Flask.
@@ -143,6 +159,19 @@ Si le tunnel Minikube se déconnecte, redémarrez-le dans un terminal séparé:
 minikube tunnel
 ```
 
+### Si HAProxy Ingress n'est pas accessible
+
+Vérifier l'état du service NodePort:
+```bash
+kubectl get svc haproxy-ingress -n ingress-haproxy
+```
+
+Si vous utilisez Minikube sans support LoadBalancer natif, assurez-vous que le tunnel est actif:
+```bash
+# Dans un terminal séparé
+minikube tunnel
+```
+
 ### Si Keycloak n'est pas accessible
 
 Attendre que Keycloak soit complètement initialisé (peut prendre jusqu'à 3 minutes):
@@ -150,12 +179,19 @@ Attendre que Keycloak soit complètement initialisé (peut prendre jusqu'à 3 mi
 kubectl logs -f $(kubectl get pods -l app=keycloak -o name)
 ```
 
-### Si l'ingress ne fonctionne pas correctement
+### Si l'ingress HAProxy ne fonctionne pas correctement
 
-Vérifier l'état du contrôleur d'ingress:
+Vérifier l'état du contrôleur HAProxy:
 ```bash
-kubectl -n ingress-nginx get pods
-kubectl -n ingress-nginx logs $(kubectl -n ingress-nginx get pods -l app.kubernetes.io/component=controller -o name)
+kubectl -n ingress-haproxy get pods
+kubectl -n ingress-haproxy logs $(kubectl -n ingress-haproxy get pods -l app.kubernetes.io/name=haproxy-ingress -o name)
+```
+
+Vérifier la configuration des ingress:
+```bash
+kubectl get ingress
+kubectl describe ingress application-ingress
+kubectl describe ingress keycloak-ingress
 ```
 
 ### Si l'authentification échoue

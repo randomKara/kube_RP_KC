@@ -42,13 +42,15 @@ data:
     OIDCClientID reverse-proxy-client
     OIDCProviderMetadataURL http://keycloak-service:8080/realms/myrealm/.well-known/openid-configuration
     OIDCRedirectURI http://auth-oidc.test/oauth2callback
-
+    
     OIDCScope "openid profile roles"
     OIDCRemoteUserClaim sub
     OIDCPassClaimsAs environment
     OIDCCryptoPassphrase abc
     OIDCClientSecret reverse-proxy-secret
     OIDCStateMaxNumberOfCookies 20 
+    OIDCSSLValidateServer Off
+    OIDCXForwardedHeaders X-Forwarded-Proto
 
     <Location />
         AuthType openid-connect

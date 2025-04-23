@@ -17,6 +17,10 @@ data:
           "clientAuthenticatorType": "client-secret",
           "secret": "reverse-proxy-secret",
           "redirectUris": [
+            "https://auth-oidc.test/*",
+            "https://auth-oidc.test/oauth2callback",
+            "https://auth-keycloak.test/*",
+            "https://auth-keycloak.test/oauth2callback",
             "http://auth-oidc.test/*",
             "http://auth-oidc.test/oauth2callback",
             "http://auth-keycloak.test/*",

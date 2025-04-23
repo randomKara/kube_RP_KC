@@ -3,13 +3,16 @@ kind: Ingress
 metadata:
   name: application-ingress
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    haproxy.org/timeout-client: "300s"
+    haproxy.org/timeout-server: "300s"
+    haproxy.org/timeout-connect: "5s"
+    haproxy.org/ssl-redirect: "false"
+    haproxy.org/ssl-passthrough: "false"
+    haproxy.org/forwarded-for: "true"
+    haproxy.org/load-balance: "roundrobin"
 spec:
-  ingressClassName: nginx
+  ingressClassName: haproxy
+  
   rules:
   - host: auth-oidc.test
     http:
