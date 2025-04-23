@@ -1,0 +1,58 @@
+@startuml
+title Flux d'authentification OIDC - Kubernetes Keycloak Apache Auth
+
+actor "Utilisateur" as user
+participant "Navigateur" as browser
+participant "Ingress" as ingress
+box "Pod Flask-App" #LightBlue
+    participant "Apache Proxy\n(Sidecar)" as apache
+    participant "Application Flask" as flask
+end box
+participant "Keycloak\nServeur d'identité" as keycloak
+
+== Accès Initial ==
+user -> browser: Accède à http://auth-oidc.test
+browser -> ingress: GET http://auth-oidc.test
+ingress -> apache: Transmet la requête
+
+== Authentification OIDC ==
+apache -> apache: Vérifie si l'utilisateur\nest authentifié
+apache -> browser: Redirige vers Keycloak\npour authentification
+browser -> keycloak: GET /realms/myrealm/protocol/openid-connect/auth
+keycloak -> browser: Affiche le formulaire de connexion
+user -> browser: Entre les identifiants\n(testuser/password ou admin/admin)
+browser -> keycloak: POST identifiants
+keycloak -> keycloak: Valide les identifiants
+keycloak -> browser: Redirige vers le callback URL\navec code d'autorisation
+browser -> apache: GET /oauth2callback\navec code d'autorisation
+apache -> keycloak: POST /realms/myrealm/protocol/openid-connect/token\néchange code contre jeton
+keycloak -> apache: Retourne les jetons\n(access, id, refresh)
+apache -> browser: Retourne un cookie contenant le jeton JWT
+browser -> browser: Stocke le jeton JWT\ndans le cookie du navigateur
+
+== Accès à l'application ==
+browser -> ingress: GET http://auth-oidc.test\navec jeton JWT dans cookie
+ingress -> apache: Transmet la requête avec jeton
+apache -> apache: Vérifie le jeton JWT et extrait\nles informations utilisateur
+apache -> apache: Définit les en-têtes:\nX-User-Name, X-User-Roles
+apache -> flask: Proxy la requête vers\nhttp://127.0.0.1:5000/
+flask -> flask: Récupère les informations utilisateur\ndepuis les en-têtes
+flask -> apache: Retourne la page HTML\navec les infos utilisateur
+apache -> browser: Retourne la page HTML
+browser -> user: Affiche la page avec\nles informations utilisateur
+
+== Accès Ultérieur (Authentifié) ==
+user -> browser: Accède à nouveau à\nhttp://auth-oidc.test
+browser -> browser: Récupère le jeton JWT\ndu cookie stocké
+browser -> ingress: GET http://auth-oidc.test\navec jeton JWT dans cookie
+ingress -> apache: Transmet la requête avec jeton
+apache -> apache: Vérifie le jeton JWT\n(validité, expiration)
+apache -> keycloak: Vérifie la validité du jeton\n(si nécessaire)
+keycloak -> apache: Confirmation validité
+apache -> apache: Extrait informations utilisateur\ndu jeton JWT
+apache -> flask: Proxy la requête avec\nles en-têtes d'authentification
+flask -> apache: Retourne la page HTML
+apache -> browser: Retourne la page HTML
+browser -> user: Affiche la page
+
+@enduml 
