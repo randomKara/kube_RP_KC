@@ -12,7 +12,7 @@ Dans cette architecture, le reverse proxy Apache est déployé en tant que sidec
 
 ### Diagramme d'architecture
 
-Le diagramme ci-dessous illustre en détail l'architecture du système et le flux d'authentification OpenID Connect :
+Le diagramme ci-dessous illustre en détail le flux d'authentification OpenID Connect :
 
 ![Flowchart](flowchart.png)
 
