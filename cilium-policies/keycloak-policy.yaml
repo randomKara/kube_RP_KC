@@ -1,0 +1,25 @@
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "keycloak-policy"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: keycloak
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        app: flask-app  # Apache proxy qui se trouve dans le pod de flask-app
+    toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP
+  egress:
+  - toEndpoints:
+    - matchLabels: {}
+    toPorts:
+    - ports:
+      - port: "53"
+        protocol: UDP
+      - port: "53"
+        protocol: TCP 

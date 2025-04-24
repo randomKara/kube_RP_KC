@@ -1,0 +1,15 @@
+apiVersion: "cilium.io/v2"
+kind: CiliumNetworkPolicy
+metadata:
+  name: "ingress-policy"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: flask-app  # Le pod où se trouve le reverse proxy Apache
+  ingress:
+  - fromEntities:
+    - "world"
+    toPorts:
+    - ports:
+      - port: "80"
+        protocol: TCP 
