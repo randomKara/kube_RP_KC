@@ -20,11 +20,8 @@ Le diagramme ci-dessous illustre en détail le flux d'authentification OpenID Co
 
 - **Flux d'authentification :** Le diagramme montre le parcours complet d'une requête utilisateur, depuis le navigateur jusqu'à l'application Flask, en passant par l'authentification Keycloak.
 - **Pattern Sidecar :** L'application Flask et le reverse proxy Apache sont dans le même pod, communiquant via localhost (127.0.0.1).
-- **Composants principaux :**
-  - Conteneur Flask (bleu) : Application backend
-  - Conteneur Apache (rouge) : Gère l'authentification OIDC
-  - Conteneur Keycloak (violet) : Serveur d'identité avec utilisateurs et clients
-- **Flux de données :** Les flèches numérotées indiquent l'ordre précis des opérations lors de l'authentification d'un utilisateur.
+
+Pour plus de détails sur l'architecture, se référer à l'[UML](./UML.png)
 
 ## Prérequis
 
