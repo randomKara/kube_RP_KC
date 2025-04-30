@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wireguard-config
+data:
+  keycloak.conf: |
+    [Interface]
+    Address = 10.100.100.1/24
+    ListenPort = 51820
+    PrivateKey = SK9umvMXKtLOIFuvWNXQEX5jHxOOPZ2rFCVCPJnHg1k=
+
+    [Peer]
+    # Application
+    PublicKey = 6MHKNpX5JKp/rN7qSjEbAW/H0S/EbMfQnAL6Y151XXU=
+    AllowedIPs = 10.100.100.2/32
+
+    [Peer]
+    # Reverse Proxy
+    PublicKey = Vm4AFYwlsGF9KZA5XgASD8UQ7pP24etX1rYLlEMNGHY=
+    AllowedIPs = 10.100.100.3/32
+
+  application.conf: |
+    [Interface]
+    Address = 10.100.100.2/24
+    ListenPort = 51820
+    PrivateKey = OG9NxbVBOeAGFjEYmGlrM+C0MH7c4rEUlGr/ZkNRfms=
+
+    [Peer]
+    # Keycloak
+    PublicKey = EPCfwbmQ//6jYYxs8XLFYixbbs3dwF7UkYF1rMHyjRw=
+    AllowedIPs = 10.100.100.1/32
+
+    [Peer]
+    # Reverse Proxy
+    PublicKey = Vm4AFYwlsGF9KZA5XgASD8UQ7pP24etX1rYLlEMNGHY=
+    AllowedIPs = 10.100.100.3/32
+
+  reverse-proxy.conf: |
+    [Interface]
+    Address = 10.100.100.3/24
+    ListenPort = 51820
+    PrivateKey = gJ04536RlGz+HZ6UsQLs1x9VBfDDcfHFPNO1OPJYe04=
+
+    [Peer]
+    # Keycloak
+    PublicKey = EPCfwbmQ//6jYYxs8XLFYixbbs3dwF7UkYF1rMHyjRw=
+    AllowedIPs = 10.100.100.1/32
+
+    [Peer]
+    # Application
+    PublicKey = 6MHKNpX5JKp/rN7qSjEbAW/H0S/EbMfQnAL6Y151XXU=
+    AllowedIPs = 10.100.100.2/32 

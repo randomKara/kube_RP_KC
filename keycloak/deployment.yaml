@@ -14,6 +14,7 @@ spec:
       labels:
         app: keycloak
     spec:
+      serviceAccountName: wireguard-sa
       containers:
       - name: keycloak
         image: quay.io/keycloak/keycloak:21.1
@@ -59,10 +60,32 @@ spec:
           requests:
             cpu: "500m"
             memory: "512Mi"
+      - name: wireguard
+        image: masipcat/wireguard-go:latest
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+              - NET_ADMIN
+              - SYS_MODULE
+        volumeMounts:
+        - name: wireguard-config
+          mountPath: /etc/wireguard/wg0.conf
+          subPath: keycloak.conf
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
       volumes:
       - name: keycloak-realm
         configMap:
           name: keycloak-realm-config
+      - name: wireguard-config
+        configMap:
+          name: wireguard-config
 ---
 apiVersion: v1
 kind: Service
