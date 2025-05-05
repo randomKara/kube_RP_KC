@@ -1,179 +1,158 @@
-# Kubernetes OIDC Authentication Cluster
+# Kubernetes OIDC Authentication Cluster avec Cilium
 
-Ce projet déploie un cluster Kubernetes avec trois composants principaux :
-
-1. Une application Flask simple
-2. Un reverse proxy Apache avec l'authentification OIDC (en sidecar)
-3. Un serveur Keycloak pour la gestion des identités
+Ce projet déploie un cluster Kubernetes avec une application Flask, un reverse proxy Apache pour l'authentification OIDC, et un serveur Keycloak pour la gestion des identités. Cilium est utilisé comme CNI (Container Network Interface) pour la connectivité réseau et la sécurité.
 
 ## Architecture
 
-Dans cette architecture, le reverse proxy Apache est déployé en tant que sidecar dans le même pod que l'application Flask. Cela permet une communication directe et sécurisée entre le proxy et l'application.
+L'architecture comprend :
 
-### Diagramme d'architecture
-
-Le diagramme ci-dessous illustre en détail l'architecture du système et le flux d'authentification OpenID Connect :
+*   **Application Flask :** Application web principale.
+*   **Reverse Proxy Apache :** Déployé en tant que sidecar dans le même pod que Flask, gère l'authentification OIDC.
+*   **Keycloak :** Serveur d'identité pour l'authentification et l'autorisation.
+*   **Cilium :** Fournit la connectivité réseau entre les composants et implémente les politiques de sécurité.
 
 ![Diagramme d'architecture](UML.png)
 
-#### Explications du diagramme :
+Le reverse proxy Apache est déployé en tant que sidecar dans le même pod que l'application Flask, permettant une communication directe et sécurisée via localhost (127.0.0.1).
 
-- **Flux d'authentification :** Le diagramme montre le parcours complet d'une requête utilisateur, depuis le navigateur jusqu'à l'application Flask, en passant par l'authentification Keycloak.
-- **Pattern Sidecar :** L'application Flask et le reverse proxy Apache sont dans le même pod, communiquant via localhost (127.0.0.1).
-- **Composants principaux :**
-  - Conteneur Flask (bleu) : Application backend
-  - Conteneur Apache (rouge) : Gère l'authentification OIDC
-  - Conteneur Keycloak (violet) : Serveur d'identité avec utilisateurs et clients
-- **Flux de données :** Les flèches numérotées indiquent l'ordre précis des opérations lors de l'authentification d'un utilisateur.
+## Cilium
+
+Cilium est une solution CNI open-source qui utilise eBPF pour fournir une connectivité, une sécurité et une observabilité réseau avancées pour les applications cloud-native.
+
+### Avantages de Cilium
+
+*   **Politiques réseau avancées :** Contrôle précis des communications entre services.
+*   **Observabilité :** Visibilité détaillée du trafic réseau.
+*   **Performance :** Utilisation d'eBPF pour une performance optimale.
+*   **Sécurité :** Protection contre les menaces réseau grâce à des politiques granulaires.
+*   **Compatible Kubernetes :** S'intègre parfaitement avec l'écosystème Kubernetes.
+
+### Politiques réseau implémentées
+
+Les politiques réseau suivantes sont définies pour sécuriser l'application :
+
+1.  **flask-app-policy.yaml :** Limite l'accès à l'application Flask uniquement depuis le proxy Apache (sidecar).
+2.  **keycloak-policy.yaml :** Contrôle l'accès au serveur Keycloak, autorisant uniquement le trafic depuis le proxy Apache.
+3.  **ingress-policy.yaml :** Autorise l'accès externe via l'Ingress au proxy Apache sur le port 80.
 
 ## Prérequis
 
-- Docker installé
-- Minikube installé
-- kubectl installé
-- Privilèges pour modifier le fichier /etc/hosts
+*   Minikube v1.35.0 ou ultérieur
+*   kubectl v1.29.0 ou ultérieur
+*   Interface CLI Cilium
 
-## Configuration
+## Installation
 
-- **Application Flask** : Service web simple qui affiche les informations utilisateur.
-- **Reverse Proxy Apache** : Apache avec mod_auth_openidc qui gère l'authentification OIDC, déployé comme sidecar.
-- **Keycloak** : Serveur d'identité qui initialise un realm avec des utilisateurs prédéfinis.
+1.  Clonez ce dépôt :
 
-## Déploiement complet
+    ```bash
+    git clone <repo-url>
+    cd kube_manifests
+    ```
+2.  Exécutez le script d'installation :
 
-### 1. Démarrer Minikube
+    ```bash
+    ./cilium-setup.sh
+    ```
 
-```bash
-# Démarrer minikube
-minikube start
+    Ce script automatise les étapes suivantes :
 
-# Activer le module ingress pour l'accès externe
-minikube addons enable ingress
+    *   Démarrage de Minikube avec les paramètres appropriés pour Cilium
+    *   Installation de l'interface CLI Cilium
+    *   Déploiement de Cilium dans le cluster
+    *   Application des politiques réseau Cilium
 
-# Démarrer le tunnel minikube (à garder ouvert dans un terminal séparé)
-minikube tunnel
-```
+## Vérification de l'installation
 
-### 2. Construire les images Docker
-
-```bash
-cd kube_manifests
-./build-images.sh
-```
-
-### 3. Charger les images dans Minikube
+Pour vérifier l'état de Cilium :
 
 ```bash
-# Charger les images dans Minikube
-minikube image load flask-app:latest
-minikube image load apache-proxy:latest
+cilium status
 ```
 
-### 4. Déployer les services sur Kubernetes
+Pour vérifier les politiques réseau :
 
 ```bash
-# Déployer Keycloak
-kubectl apply -f keycloak/configmap.yaml
-kubectl apply -f keycloak/deployment.yaml
-kubectl apply -f keycloak/ingress.yaml
-
-# Attendre que Keycloak soit prêt (cela peut prendre jusqu'à 2-3 minutes)
-kubectl wait --for=condition=ready pod --selector=app=keycloak --timeout=180s
-
-# Déployer Apache et Flask
-kubectl apply -f reverse-proxy/configmap.yaml
-kubectl apply -f application/deployment.yaml 
-kubectl apply -f reverse-proxy/service.yaml
-kubectl apply -f ingress.yaml
+kubectl get cnp
 ```
 
-### 5. Configurer les entrées DNS
+Pour voir les détails d'une politique spécifique :
 
-Obtenir l'adresse IP de l'ingress:
 ```bash
-INGRESS_IP=$(kubectl get ingress -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
-echo $INGRESS_IP
+kubectl describe cnp flask-app-policy
 ```
-
-Ajouter les entrées au fichier /etc/hosts:
-```bash
-sudo sh -c "echo \"$INGRESS_IP auth-oidc.test\" >> /etc/hosts"
-sudo sh -c "echo \"$INGRESS_IP auth-keycloak.test\" >> /etc/hosts"
-```
-
-### 6. Vérification du déploiement
-
-Vérifier que Keycloak fonctionne correctement:
-```bash
-curl -s http://auth-keycloak.test/realms/myrealm/.well-known/openid-configuration | head -5
-```
-
-Vérifier que l'application redirige vers Keycloak pour l'authentification:
-```bash
-curl -s http://auth-oidc.test -I
-```
-
-## Accès à l'application
-
-Accédez à l'application via votre navigateur:
-```
-http://auth-oidc.test
-```
-
-Vous serez redirigé vers la page de connexion de Keycloak. Après vous être authentifié, vous serez redirigé vers l'application Flask.
-
-## Utilisateurs par défaut
-
-- **Utilisateur normal** :
-  - Nom d'utilisateur : testuser
-  - Mot de passe : password
-  - Rôle : user
-
-- **Administrateur** :
-  - Nom d'utilisateur : admin
-  - Mot de passe : admin
-  - Rôles : admin, user
 
 ## Dépannage
 
-### Si le tunnel Minikube se déconnecte
+### Problèmes courants
 
-Si le tunnel Minikube se déconnecte, redémarrez-le dans un terminal séparé:
+1.  **Cilium ne démarre pas correctement**
+
+    ```bash
+    kubectl get pods -n kube-system -l k8s-app=cilium
+    kubectl logs -n kube-system -l k8s-app=cilium
+    ```
+2.  **Les politiques ne sont pas appliquées**
+
+    ```bash
+    kubectl get cnp -o wide
+    ```
+3.  **Problèmes de connectivité entre les services**
+
+    *   Vérifier que les politiques autorisent le trafic nécessaire
+    *   Utiliser `cilium connectivity test` pour tester la connectivité
+
+### Réinstallation
+
+Si nécessaire, réinstallez Cilium :
+
 ```bash
-minikube tunnel
+cilium uninstall
+./cilium-setup.sh
 ```
 
-### Si Keycloak n'est pas accessible
+### Autres problèmes
 
-Attendre que Keycloak soit complètement initialisé (peut prendre jusqu'à 3 minutes):
+*   **Si Keycloak ne démarre pas correctement :**
+
+    ```bash
+    kubectl logs -f $(kubectl get pods -l app=keycloak -o name)
+    ```
+*   **Si l'ingress ne fonctionne pas correctement :**
+
+    ```bash
+    kubectl -n ingress-nginx get pods
+    kubectl -n ingress-nginx logs $(kubectl -n ingress-nginx get pods -l app.kubernetes.io/component=controller -o name)
+    ```
+*   **Si l'authentification échoue :**
+
+    ```bash
+    kubectl logs $(kubectl get pods -l app=flask-app -o name) -c apache-proxy
+    ```
+*   **Si les pods sont bloqués en ImagePullBackOff :**
+
+    ```bash
+    minikube image load flask-app:latest
+    minikube image load apache-proxy:latest
+    kubectl delete pod $(kubectl get pods -l app=flask-app -o name | cut -d/ -f2)
+    ```
+
+## Monitoring
+
+Pour surveiller le trafic réseau, vous pouvez activer Hubble (interface d'observabilité de Cilium) :
+
 ```bash
-kubectl logs -f $(kubectl get pods -l app=keycloak -o name)
+cilium hubble enable
 ```
 
-### Si l'ingress ne fonctionne pas correctement
+## Amélioration future
 
-Vérifier l'état du contrôleur d'ingress:
-```bash
-kubectl -n ingress-nginx get pods
-kubectl -n ingress-nginx logs $(kubectl -n ingress-nginx get pods -l app.kubernetes.io/component=controller -o name)
-```
+*   Activation de Hubble pour une meilleure observabilité
+*   Implémentation de politiques réseau plus détaillées basées sur les URL et les méthodes HTTP
+*   Configuration de métriques Prometheus pour le monitoring
 
-### Si l'authentification échoue
+## Ressources
 
-Vérifier les logs du reverse proxy Apache:
-```bash
-kubectl logs $(kubectl get pods -l app=flask-app -o name) -c apache-proxy
-```
-
-### Si les pods sont bloqués en ImagePullBackOff
-
-Si vous rencontrez des erreurs d'extraction d'image (ImagePullBackOff), assurez-vous que les images sont bien chargées dans Minikube:
-```bash
-minikube image load flask-app:latest
-minikube image load apache-proxy:latest
-```
-
-Ensuite, supprimez et laissez Kubernetes recréer le pod:
-```bash
-kubectl delete pod $(kubectl get pods -l app=flask-app -o name | cut -d/ -f2)
-```
+*   [Documentation officielle de Cilium](https://docs.cilium.io/)
+*   [Guide des politiques réseau Cilium](https://docs.cilium.io/en/stable/network/kubernetes/policy/)
+*   [Tutoriels Cilium](https://docs.cilium.io/en/stable/tutorials/)
