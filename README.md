@@ -1,179 +1,220 @@
-# Kubernetes OIDC Authentication Cluster
+# Architecture de Sécurité Kubernetes avec WireGuard, Cilium et Authentification OIDC
 
-Ce projet déploie un cluster Kubernetes avec trois composants principaux :
+Ce projet déploie un cluster Kubernetes sécurisé, intégrant WireGuard pour le chiffrement des communications, Cilium comme CNI (Container Network Interface) pour la sécurité réseau avancée, et une authentification OIDC via Keycloak et un reverse proxy Apache.
 
-1. Une application Flask simple
-2. Un reverse proxy Apache avec l'authentification OIDC (en sidecar)
-3. Un serveur Keycloak pour la gestion des identités
+## Architecture Générale
 
-## Architecture
+L'architecture comprend :
 
-Dans cette architecture, le reverse proxy Apache est déployé en tant que sidecar dans le même pod que l'application Flask. Cela permet une communication directe et sécurisée entre le proxy et l'application.
+-   Une application Flask.
+-   Un reverse proxy Apache (sidecar) avec authentification OpenID Connect (OIDC).
+-   Un serveur Keycloak pour la gestion des identités.
+-   WireGuard pour chiffrer les communications entre les pods.
+-   Cilium pour la gestion des politiques réseau.
 
-### Diagramme d'architecture
-
-Le diagramme ci-dessous illustre en détail l'architecture du système et le flux d'authentification OpenID Connect :
-
-![Diagramme d'architecture](UML.png)
-
-#### Explications du diagramme :
-
-- **Flux d'authentification :** Le diagramme montre le parcours complet d'une requête utilisateur, depuis le navigateur jusqu'à l'application Flask, en passant par l'authentification Keycloak.
-- **Pattern Sidecar :** L'application Flask et le reverse proxy Apache sont dans le même pod, communiquant via localhost (127.0.0.1).
-- **Composants principaux :**
-  - Conteneur Flask (bleu) : Application backend
-  - Conteneur Apache (rouge) : Gère l'authentification OIDC
-  - Conteneur Keycloak (violet) : Serveur d'identité avec utilisateurs et clients
-- **Flux de données :** Les flèches numérotées indiquent l'ordre précis des opérations lors de l'authentification d'un utilisateur.
-
-## Prérequis
-
-- Docker installé
-- Minikube installé
-- kubectl installé
-- Privilèges pour modifier le fichier /etc/hosts
-
-## Configuration
-
-- **Application Flask** : Service web simple qui affiche les informations utilisateur.
-- **Reverse Proxy Apache** : Apache avec mod_auth_openidc qui gère l'authentification OIDC, déployé comme sidecar.
-- **Keycloak** : Serveur d'identité qui initialise un realm avec des utilisateurs prédéfinis.
-
-## Déploiement complet
-
-### 1. Démarrer Minikube
-
-```bash
-# Démarrer minikube
-minikube start
-
-# Activer le module ingress pour l'accès externe
-minikube addons enable ingress
-
-# Démarrer le tunnel minikube (à garder ouvert dans un terminal séparé)
-minikube tunnel
+```
+┌─────────────────────────────────────────────┐
+│                  Ingress                    │
+└───────────────────────┬─────────────────────┘
+                        │
+    ┌──────────────────┴───────────────────┐
+    │                                      │
+┌───▼──────────────────┐      ┌────────────▼────────┐
+│   Flask + Apache     │      │      Keycloak       │
+│   (app + proxy)      │◄────►│                     │
+│                      │      │                     │
+│  POD 1               │      │  POD 2              │
+│ ┌──────────────────┐ │      │ ┌─────────────────┐ │
+│ │    WireGuard     │ │      │ │    WireGuard    │ │
+│ │    10.100.100.2  │ │      │ │   10.100.100.1  │ │
+│ └──────────────────┘ │      │ └─────────────────┘ │
+└──────────────────────┘      └─────────────────────┘
 ```
 
-### 2. Construire les images Docker
+## WireGuard : Chiffrement des Communications
+
+Toutes les communications entre les pods sont chiffrées via WireGuard, formant un réseau privé virtuel 10.100.100.0/24.
+
+### Vérification du Chiffrement WireGuard
+
+1.  **Analyser l'interface WireGuard :**
+
+    ```bash
+    # Vérifier que l'interface WireGuard est active dans le conteneur
+    kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c wireguard -- wg show
+
+    # Vérifier les ports en écoute (le port UDP 51820 doit être présent pour WireGuard)
+    kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c wireguard -- netstat -tuln
+    ```
+
+    Confirmer la présence du port UDP 51820 et une configuration WireGuard avec des peers.
+2.  **Observer les performances réseau :**
+
+    ```bash
+    # Avec WireGuard (via l'interface wg0):
+    time kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c wireguard -- curl -s 10.100.100.1:8080 > /dev/null
+
+    # Sans WireGuard (via l'interface directe):
+    time kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c flask-app -- curl -s $(kubectl get svc keycloak-service -o jsonpath='{.spec.clusterIP}'):8080 > /dev/null
+    ```
+3.  **Utiliser `ngrep` pour observer le trafic :**
+
+    ```bash
+    # Installer ngrep dans le conteneur
+    kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c flask-app -- apt-get update && apt-get install -y ngrep
+
+    # Observer le trafic sur les différentes interfaces
+    kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c flask-app -- ngrep -d any -q host $(kubectl get svc keycloak-service -o jsonpath='{.spec.clusterIP}')
+    ```
+4.  **Désactiver WireGuard pour comparer :**
+
+    ```bash
+    # Modifier les déploiements pour supprimer les conteneurs WireGuard
+    kubectl edit deployment flask-app
+    kubectl edit deployment keycloak
+
+    # Recherchez et supprimez le conteneur nommé "wireguard"
+    # Sauvegardez et quittez l'éditeur
+
+    # Puis, vérifiez si les services peuvent toujours communiquer (ils le feront, mais sans chiffrement)
+    kubectl exec -it $(kubectl get pods -l app=flask-app -o jsonpath='{.items[0].metadata.name}') -c flask-app -- curl -v $(kubectl get svc keycloak-service -o jsonpath='{.spec.clusterIP}'):8080
+    ```
+
+### Preuves du Chiffrement WireGuard
+
+1.  Présence du port UDP 51820 sur chaque pod.
+2.  Configuration des interfaces WireGuard avec `wg show`.
+3.  Configuration des clés publiques et privées.
+4.  Utilisation du VPN avec le sous-réseau 10.100.100.0/24.
+5.  Communication entre les pods via ces adresses IP virtuelles.
+
+## Cilium : Sécurité et Connectivité Réseau
+
+Cilium est utilisé comme CNI pour fournir une connectivité réseau, une sécurité et une observabilité avancées. Il utilise eBPF pour une performance optimale.
+
+### Politiques Réseau Cilium
+
+1.  **flask-app-policy.yaml :** Limite l'accès à l'application Flask uniquement depuis le proxy Apache (sidecar).
+2.  **keycloak-policy.yaml :** Contrôle l'accès au serveur Keycloak, autorisant uniquement le trafic depuis le proxy Apache.
+3.  **ingress-policy.yaml :** Autorise l'accès externe via l'Ingress au proxy Apache sur le port 80.
+
+### Installation de Cilium
 
 ```bash
-cd kube_manifests
-./build-images.sh
+./cilium-setup.sh
 ```
 
-### 3. Charger les images dans Minikube
+Ce script automatise :
+
+-   Le démarrage de Minikube avec les paramètres appropriés pour Cilium.
+-   L'installation de l'interface CLI Cilium.
+-   Le déploiement de Cilium dans le cluster.
+-   L'application des politiques réseau Cilium.
+
+### Vérification de Cilium
 
 ```bash
-# Charger les images dans Minikube
+cilium status
+kubectl get cnp
+kubectl describe cnp flask-app-policy
+```
+
+## Authentification OIDC avec Keycloak
+
+L'authentification est gérée par Keycloak et un reverse proxy Apache (mod\_auth\_openidc).
+
+### Configuration
+
+-   **Application Flask :** Fournit les informations utilisateur après authentification.
+-   **Reverse Proxy Apache :** Gère l'authentification OIDC.
+-   **Keycloak :** Serveur d'identité initialisé avec un realm et des utilisateurs prédéfinis.
+
+### Déploiement
+
+1.  **Démarrer Minikube :**
+
+    ```bash
+    minikube start
+    minikube addons enable ingress
+    minikube tunnel
+    ```
+2.  **Construire les images Docker :**
+
+    ```bash
+    ./build-images.sh
+    ```
+3.  **Charger les images dans Minikube :**
+
+    ```bash
+    minikube image load flask-app:latest
+    minikube image load apache-proxy:latest
+    ```
+4.  **Déployer les services :**
+
+    ```bash
+    kubectl apply -f keycloak/configmap.yaml
+    kubectl apply -f keycloak/deployment.yaml
+    kubectl apply -f keycloak/ingress.yaml
+    kubectl wait --for=condition=ready pod --selector=app=keycloak --timeout=180s
+    kubectl apply -f reverse-proxy/configmap.yaml
+    kubectl apply -f application/deployment.yaml
+    kubectl apply -f reverse-proxy/service.yaml
+    kubectl apply -f ingress.yaml
+    ```
+5.  **Configurer les entrées DNS :**
+
+    ```bash
+    INGRESS_IP=$(kubectl get ingress -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+    echo $INGRESS_IP
+    sudo sh -c "echo \"$INGRESS_IP auth-oidc.test\" >> /etc/hosts"
+    sudo sh -c "echo \"$INGRESS_IP auth-keycloak.test\" >> /etc/hosts"
+    ```
+
+### Accès à l'Application
+
+Accéder à l'application via : `http://auth-oidc.test`
+
+### Utilisateurs par Défaut
+
+-   **Utilisateur normal :**
+    -   Nom d'utilisateur : testuser
+    -   Mot de passe : password
+    -   Rôle : user
+-   **Administrateur :**
+    -   Nom d'utilisateur : admin
+    -   Mot de passe : admin
+    -   Rôles : admin, user
+
+## Suppression et Recréation de l'Environnement
+
+### Suppression
+
+```bash
+kubectl delete -k .
+kubectl delete -f ingress.yaml
+```
+
+### Recréation
+
+```bash
 minikube image load flask-app:latest
 minikube image load apache-proxy:latest
-```
-
-### 4. Déployer les services sur Kubernetes
-
-```bash
-# Déployer Keycloak
-kubectl apply -f keycloak/configmap.yaml
-kubectl apply -f keycloak/deployment.yaml
-kubectl apply -f keycloak/ingress.yaml
-
-# Attendre que Keycloak soit prêt (cela peut prendre jusqu'à 2-3 minutes)
-kubectl wait --for=condition=ready pod --selector=app=keycloak --timeout=180s
-
-# Déployer Apache et Flask
-kubectl apply -f reverse-proxy/configmap.yaml
-kubectl apply -f application/deployment.yaml 
-kubectl apply -f reverse-proxy/service.yaml
+kubectl apply -f wireguard/deployment.yaml
+kubectl apply -f wireguard/configmap.yaml
+kubectl apply -k .
 kubectl apply -f ingress.yaml
 ```
 
-### 5. Configurer les entrées DNS
-
-Obtenir l'adresse IP de l'ingress:
-```bash
-INGRESS_IP=$(kubectl get ingress -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
-echo $INGRESS_IP
-```
-
-Ajouter les entrées au fichier /etc/hosts:
-```bash
-sudo sh -c "echo \"$INGRESS_IP auth-oidc.test\" >> /etc/hosts"
-sudo sh -c "echo \"$INGRESS_IP auth-keycloak.test\" >> /etc/hosts"
-```
-
-### 6. Vérification du déploiement
-
-Vérifier que Keycloak fonctionne correctement:
-```bash
-curl -s http://auth-keycloak.test/realms/myrealm/.well-known/openid-configuration | head -5
-```
-
-Vérifier que l'application redirige vers Keycloak pour l'authentification:
-```bash
-curl -s http://auth-oidc.test -I
-```
-
-## Accès à l'application
-
-Accédez à l'application via votre navigateur:
-```
-http://auth-oidc.test
-```
-
-Vous serez redirigé vers la page de connexion de Keycloak. Après vous être authentifié, vous serez redirigé vers l'application Flask.
-
-## Utilisateurs par défaut
-
-- **Utilisateur normal** :
-  - Nom d'utilisateur : testuser
-  - Mot de passe : password
-  - Rôle : user
-
-- **Administrateur** :
-  - Nom d'utilisateur : admin
-  - Mot de passe : admin
-  - Rôles : admin, user
-
 ## Dépannage
 
-### Si le tunnel Minikube se déconnecte
+-   **Minikube :** Si le tunnel se déconnecte, redémarrez-le (`minikube tunnel`).
+-   **Keycloak :** Attendez que Keycloak soit initialisé (`kubectl logs -f $(kubectl get pods -l app=keycloak -o name)`).
+-   **Ingress :** Vérifiez l'état du contrôleur (`kubectl -n ingress-nginx get pods` et les logs).
+-   **Authentification :** Vérifiez les logs du reverse proxy Apache (`kubectl logs $(kubectl get pods -l app=flask-app -o name) -c apache-proxy`).
+-   **ImagePullBackOff :** Assurez-vous que les images sont chargées dans Minikube et supprimez le pod (`kubectl delete pod $(kubectl get pods -l app=flask-app -o name | cut -d/ -f2)`).
 
-Si le tunnel Minikube se déconnecte, redémarrez-le dans un terminal séparé:
-```bash
-minikube tunnel
-```
+## Ressources
 
-### Si Keycloak n'est pas accessible
-
-Attendre que Keycloak soit complètement initialisé (peut prendre jusqu'à 3 minutes):
-```bash
-kubectl logs -f $(kubectl get pods -l app=keycloak -o name)
-```
-
-### Si l'ingress ne fonctionne pas correctement
-
-Vérifier l'état du contrôleur d'ingress:
-```bash
-kubectl -n ingress-nginx get pods
-kubectl -n ingress-nginx logs $(kubectl -n ingress-nginx get pods -l app.kubernetes.io/component=controller -o name)
-```
-
-### Si l'authentification échoue
-
-Vérifier les logs du reverse proxy Apache:
-```bash
-kubectl logs $(kubectl get pods -l app=flask-app -o name) -c apache-proxy
-```
-
-### Si les pods sont bloqués en ImagePullBackOff
-
-Si vous rencontrez des erreurs d'extraction d'image (ImagePullBackOff), assurez-vous que les images sont bien chargées dans Minikube:
-```bash
-minikube image load flask-app:latest
-minikube image load apache-proxy:latest
-```
-
-Ensuite, supprimez et laissez Kubernetes recréer le pod:
-```bash
-kubectl delete pod $(kubectl get pods -l app=flask-app -o name | cut -d/ -f2)
-```
+-   [Documentation officielle de Cilium](https://docs.cilium.io/)
+-   [Guide des politiques réseau Cilium](https://docs.cilium.io/en/stable/network/kubernetes/policy/)
+-   [Tutoriels Cilium](https://docs.cilium.io/en/stable/tutorials/)
