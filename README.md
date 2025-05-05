@@ -11,8 +11,6 @@ L'architecture comprend :
 *   **Keycloak :** Serveur d'identité pour l'authentification et l'autorisation.
 *   **Cilium :** Fournit la connectivité réseau entre les composants et implémente les politiques de sécurité.
 
-![Diagramme d'architecture](UML.png)
-
 Le reverse proxy Apache est déployé en tant que sidecar dans le même pod que l'application Flask, permettant une communication directe et sécurisée via localhost (127.0.0.1).
 
 ## Cilium
